@@ -112,7 +112,7 @@ contract Vault is
     uint256 public accumulatedPerfFee;
 
     /// Investment fee pct
-    uint16 public investmentFeeEstimatePct;
+    uint16 public investmentTolerancePct;
 
     /// Rebalance minimum
     uint256 private immutable rebalanceMinimum;
@@ -124,7 +124,7 @@ contract Vault is
      * @param _treasury Treasury address to collect performance fee
      * @param _owner Vault admin address
      * @param _perfFeePct Performance fee percentage
-     * @param _investmentFeeEstimatePct Estimated fee charged when investing through the strategy
+     * @param _investmentTolerancePct Loss tolerance when investing through the strategy
      * @param _swapPools Swap pools used to automatically convert tokens to underlying
      */
     constructor(
@@ -134,13 +134,13 @@ contract Vault is
         address _treasury,
         address _owner,
         uint16 _perfFeePct,
-        uint16 _investmentFeeEstimatePct,
+        uint16 _investmentTolerancePct,
         SwapPoolParam[] memory _swapPools
     ) {
         require(_investPct.validPct(), "Vault: invalid investPct");
         require(_perfFeePct.validPct(), "Vault: invalid performance fee");
         require(
-            _investmentFeeEstimatePct.validPct(),
+            _investmentTolerancePct.validPct(),
             "Vault: invalid investment fee"
         );
         require(
@@ -164,11 +164,11 @@ contract Vault is
         treasury = _treasury;
         minLockPeriod = _minLockPeriod;
         perfFeePct = _perfFeePct;
-        investmentFeeEstimatePct = _investmentFeeEstimatePct;
+        investmentTolerancePct = _investmentTolerancePct;
 
         depositors = new Depositors(this);
 
-        rebalanceMinimum = 10 * 10 ** underlying.decimals();
+        rebalanceMinimum = 10 * 10**underlying.decimals();
 
         _addPools(_swapPools);
     }
@@ -241,7 +241,7 @@ contract Vault is
                 _params.lockDuration <= MAX_DEPOSIT_LOCK_DURATION,
             "Vault: invalid lock period"
         );
-        uint256 principalMinusStrategyFee = _applyInvestmentFeeEstimate(
+        uint256 principalMinusStrategyFee = _applyInvestmentTolerance(
             totalPrincipal
         );
         uint256 previousTotalUnderlying = totalUnderlyingMinusSponsored();
@@ -345,16 +345,16 @@ contract Vault is
 
         (uint256 maxInvestableAmount, uint256 alreadyInvested) = investState();
 
-        require(
-            maxInvestableAmount != alreadyInvested,
-            "Vault: nothing to do"
-        );
+        require(maxInvestableAmount != alreadyInvested, "Vault: nothing to do");
 
         // disinvest
         if (alreadyInvested > maxInvestableAmount) {
             uint256 disinvestAmount = alreadyInvested - maxInvestableAmount;
 
-            require(disinvestAmount >= rebalanceMinimum, "Vault: Not enough to disinvest");
+            require(
+                disinvestAmount >= rebalanceMinimum,
+                "Vault: Not enough to disinvest"
+            );
 
             strategy.withdrawToVault(disinvestAmount);
 
@@ -366,7 +366,10 @@ contract Vault is
         // invest
         uint256 investAmount = maxInvestableAmount - alreadyInvested;
 
-        require(investAmount >= rebalanceMinimum, "Vault: Not enough to invest");
+        require(
+            investAmount >= rebalanceMinimum,
+            "Vault: Not enough to invest"
+        );
 
         underlying.safeTransfer(address(strategy), investAmount);
 
@@ -420,7 +423,12 @@ contract Vault is
         _transferAndCheckInputToken(msg.sender, _inputToken, _amount);
         uint256 underlyingAmount = _swapIntoUnderlying(_inputToken, _amount);
 
-        deposits[tokenId] = Deposit(underlyingAmount, address(0), lockedUntil, 0);
+        deposits[tokenId] = Deposit(
+            underlyingAmount,
+            address(0),
+            lockedUntil,
+            0
+        );
         totalSponsored += underlyingAmount;
 
         emit Sponsored(tokenId, underlyingAmount, msg.sender, lockedUntil);
@@ -537,15 +545,15 @@ contract Vault is
     }
 
     /// @inheritdoc IVaultSettings
-    function setInvestmentFeeEstimatePct(uint16 pct)
+    function setInvestmentTolerancePct(uint16 pct)
         external
         override(IVaultSettings)
         onlyRole(SETTINGS_ROLE)
     {
         require(pct.validPct(), "Vault: invalid investment fee");
 
-        investmentFeeEstimatePct = pct;
-        emit InvestmentFeeEstimatePctUpdated(pct);
+        investmentTolerancePct = pct;
+        emit InvestmentTolerancePctUpdated(pct);
     }
 
     //
@@ -679,7 +687,10 @@ contract Vault is
 
             require(owner == msg.sender, "Vault: you are not allowed");
             require(lockedUntil <= block.timestamp, "Vault: amount is locked");
-            require(claimerId == address(0), "Vault: token id is not a sponsor");
+            require(
+                claimerId == address(0),
+                "Vault: token id is not a sponsor"
+            );
 
             sponsorAmount += amount;
 
@@ -875,7 +886,10 @@ contract Vault is
             "Vault: deposit is locked"
         );
 
-        require(_deposit.claimerId != address(0), "Vault: token id is not a deposit");
+        require(
+            _deposit.claimerId != address(0),
+            "Vault: token id is not a deposit"
+        );
 
         bool isFull = _deposit.amount == _amount;
 
@@ -1012,21 +1026,21 @@ contract Vault is
     }
 
     /**
-     * Applies an estimated fee to the given @param _amount.
+     * Applies an investment tolerance to the given @param _amount.
      *
-     * This function should be used to estimate how much underlying will be
-     * left after the strategy invests. For instance, the fees taken by Anchor.
+     * This function is used to prevent the vault from entering loss mode when funds are lost due to fees in the strategy.
+     * For instance, the fees taken by Anchor.
      *
      * @param _amount Amount to apply the fees to.
      *
      * @return Amount with the fees applied.
      */
-    function _applyInvestmentFeeEstimate(uint256 _amount)
+    function _applyInvestmentTolerance(uint256 _amount)
         internal
         view
         returns (uint256)
     {
-        return _amount - _amount.pctOf(investmentFeeEstimatePct);
+        return _amount - _amount.pctOf(investmentTolerancePct);
     }
 
     function sharesOf(address claimerId) external view returns (uint256) {

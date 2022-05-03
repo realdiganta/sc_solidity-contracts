@@ -404,10 +404,10 @@ describe("Vault", () => {
     });
   });
 
-  describe("setInvestmentFeeEstimatePct", () => {
+  describe("setInvestmentTolerancePct", () => {
     it("reverts if msg.sender is not admin", async () => {
       await expect(
-        vault.connect(alice).setInvestmentFeeEstimatePct(100)
+        vault.connect(alice).setInvestmentTolerancePct(100)
       ).to.be.revertedWith(getRoleErrorMsg(alice, SETTINGS_ROLE));
     });
 
@@ -415,21 +415,21 @@ describe("Vault", () => {
       await expect(
         vault
           .connect(owner)
-          .setInvestmentFeeEstimatePct(DENOMINATOR.add(BigNumber.from("1")))
+          .setInvestmentTolerancePct(DENOMINATOR.add(BigNumber.from("1")))
       ).to.be.revertedWith("Vault: invalid investment fee");
     });
 
-    it("change investmentFeeEstimatePct and emit InvestPercentageUpdated event", async () => {
-      const newInvestmentFeeEstimatePct = 200;
+    it("change investmentTolerancePct and emit InvestPercentageUpdated event", async () => {
+      const newInvestmentTolerancePct = 200;
       const tx = await vault
         .connect(owner)
-        .setInvestmentFeeEstimatePct(newInvestmentFeeEstimatePct);
+        .setInvestmentTolerancePct(newInvestmentTolerancePct);
 
       await expect(tx)
-        .emit(vault, "InvestmentFeeEstimatePctUpdated")
-        .withArgs(newInvestmentFeeEstimatePct);
-      expect(await vault.investmentFeeEstimatePct()).to.be.equal(
-        newInvestmentFeeEstimatePct
+        .emit(vault, "InvestmentTolerancePctUpdated")
+        .withArgs(newInvestmentTolerancePct);
+      expect(await vault.investmentTolerancePct()).to.be.equal(
+        newInvestmentTolerancePct
       );
     });
   });
@@ -523,7 +523,9 @@ describe("Vault", () => {
         await vault.connect(owner).setInvestPct("8000");
         await addYieldToVault("10");
 
-        await expect(vault.connect(owner).updateInvested()).to.be.revertedWith("Vault: Not enough to invest");
+        await expect(vault.connect(owner).updateInvested()).to.be.revertedWith(
+          "Vault: Not enough to invest"
+        );
       });
 
       it("moves the funds to the strategy", async () => {
@@ -555,7 +557,9 @@ describe("Vault", () => {
         await addYieldToVault("10");
         await underlying.mint(strategy.address, parseUnits("150"));
 
-        await expect(vault.connect(owner).updateInvested()).to.be.revertedWith("Vault: Not enough to disinvest");
+        await expect(vault.connect(owner).updateInvested()).to.be.revertedWith(
+          "Vault: Not enough to disinvest"
+        );
       });
 
       it("call strategy.withdrawToVault with required amount", async () => {
@@ -565,7 +569,9 @@ describe("Vault", () => {
 
         await vault.connect(owner).updateInvested();
 
-        expect(await underlying.balanceOf(vault.address)).to.eq(parseUnits("20"));
+        expect(await underlying.balanceOf(vault.address)).to.eq(
+          parseUnits("20")
+        );
         expect(await underlying.balanceOf(strategy.address)).to.eq(
           parseUnits("180")
         );
@@ -578,7 +584,9 @@ describe("Vault", () => {
 
         const tx = await vault.connect(owner).updateInvested();
 
-        await expect(tx).to.emit(vault, "Disinvested").withArgs(parseUnits("10"));
+        await expect(tx)
+          .to.emit(vault, "Disinvested")
+          .withArgs(parseUnits("10"));
       });
     });
   });
